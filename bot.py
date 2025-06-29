@@ -17,7 +17,8 @@ from bot_handlers import (
     handle_system_prompt_choice,
     handle_photo,
     handle_message,
-    setup_commands
+    setup_commands,
+    translate
 )
 
 def main() -> None:
@@ -30,6 +31,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("newchat", new_chat))
     application.add_handler(CommandHandler("image", image_mode))
+    application.add_handler(CommandHandler("translate", translate))
     
     # Add callback query handlers
     application.add_handler(CallbackQueryHandler(handle_model_selection, pattern="^model:"))

@@ -4,7 +4,7 @@ from telegram.ext import ContextTypes
 
 from logger_setup import logger
 from config import MODELS_CONFIG
-from session import user_sessions, save_user_session, get_or_create_session
+from session import user_sessions, save_user_session, get_or_create_session, UserSession
 from ai_client import get_ai_response, generate_image
 
 async def setup_commands(application):
@@ -12,6 +12,7 @@ async def setup_commands(application):
     commands = [
         BotCommand("newchat", "Начать новый текстовый разговор"),
         BotCommand("image", "Генерация изображений"),
+        BotCommand("translate", "Перевод текста"),
         BotCommand("help", "Показать справку"),
     ]
     await application.bot.set_my_commands(commands)
@@ -269,6 +270,79 @@ async def handle_image_question(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"Error analyzing image for user {user_id}: {str(e)}")
         logger.debug(traceback.format_exc())
         await message.reply_text(f"Произошла ошибка при анализе изображения: {str(e)}")
+    
+async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Start translation mode."""
+    user_id = update.effective_user.id
+    logger.info(f"User {user_id} initiated translation mode")
+    
+    # Initialize user session
+    session = get_or_create_session(user_id)
+    
+    # Set translation mode
+    context.user_data["awaiting_target_language"] = True
+    
+    await update.message.reply_text(
+        "🌐 Режим перевода активирован.\n\n"
+        "Пожалуйста, укажите язык, на который нужно перевести текст (например, 'английский', 'немецкий', 'французский' и т.д.)."
+    )
+    logger.debug(f"User {user_id} was asked to specify target language")
+
+async def handle_target_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle target language selection for translation."""
+    user_id = update.effective_user.id
+    target_language = update.message.text
+    
+    logger.info(f"User {user_id} selected translation target language: {target_language}")
+    
+    # Store the target language
+    context.user_data["translation_target_language"] = target_language
+    context.user_data["awaiting_target_language"] = False
+    context.user_data["awaiting_translation_text"] = True
+    
+    await update.message.reply_text(
+        f"Язык перевода: {target_language}.\n\n"
+        f"Теперь отправьте текст, который нужно перевести."
+    )
+    logger.debug(f"User {user_id} was asked to provide text for translation")
+
+async def handle_translation_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle text for translation."""
+    user_id = update.effective_user.id
+    text_to_translate = update.message.text
+    target_language = context.user_data.get("translation_target_language")
+    
+    logger.info(f"User {user_id} sent text for translation to {target_language}: '{text_to_translate[:50]}...'")
+    
+    # Clear translation mode
+    context.user_data["awaiting_translation_text"] = False
+    
+    # Show typing indicator
+    await context.bot.send_chat_action(chat_id=user_id, action="typing")
+    
+    try:
+        # Create a prompt for translation
+        translate_prompt = f"Переведи следующий текст на {target_language}. Верни только переведенный текст без объяснений и комментариев:\n\n{text_to_translate}"
+        
+        # Create temporary session for translation
+        temp_session = UserSession()
+        temp_session.set_model("gpt-4o", "text")
+        temp_session.add_message("user", translate_prompt)
+        
+        # Get response from the model
+        logger.info(f"Requesting translation for user {user_id} to {target_language}")
+        response = await get_ai_response(temp_session.provider, temp_session.current_model, temp_session.history)
+        
+        # Send the translation
+        await update.message.reply_text(
+            f"Перевод на {target_language}:\n\n{response}"
+        )
+        logger.info(f"Translation sent to user {user_id}, response length: {len(response)}")
+        
+    except Exception as e:
+        logger.error(f"Error during translation for user {user_id}: {str(e)}")
+        logger.debug(traceback.format_exc())
+        await update.message.reply_text(f"Произошла ошибка при переводе: {str(e)}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle user messages."""
@@ -292,6 +366,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         logger.debug(f"User {user_id} set custom system prompt: '{message_text[:50]}...'")
         save_user_session(user_id)
+        return
+    
+    # If we're waiting for a target language for translation
+    if context.user_data.get("awaiting_target_language", False):
+        await handle_target_language(update, context)
+        return
+    
+    # If we're waiting for text to translate
+    if context.user_data.get("awaiting_translation_text", False):
+        await handle_translation_text(update, context)
         return
     
     # If we're waiting for a question about an image
