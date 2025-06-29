@@ -1,0 +1,10 @@
+__pycache__/
+har_and_cookies/
+chats/
+logs/
+
+.env
+.venv/
+
+test.py
+async_client.md

@@ -1,0 +1,64 @@
+{
+    "text": {
+        "gpt-4o": {
+            "display_name": "GPT-4o (vision 👁)",
+            "provider": "PollinationsAI",
+            "vision": true
+        },
+        "o4-mini": {
+            "display_name": "o4 mini (vision 👁)",
+            "provider": "PollinationsAI",
+            "vision": true
+        },
+        "deepseek-v3": {
+            "display_name": "Deepseek v3",
+            "provider": "DeepInfraChat"
+        },
+        "deepseek-r1": {
+            "display_name": "Deepseek R1",
+            "provider": "DeepInfraChat"
+        },
+        "claude-3.7-sonnet-thinking": {
+            "display_name": "Claude 3.7 Sonnet",
+            "provider": "LegacyLMArena"
+        },
+        "gemini-2.5-pro": {
+            "display_name": "Gemini 2.5 Pro",
+            "provider": "LegacyLMArena"
+        },
+        "qwen-3-235b": {
+            "display_name": "Qwen 3",
+            "provider": "DeepInfraChat"
+        },
+        "llama-4-scout": {
+            "display_name": "Llama 4 Scout",
+            "provider": "DeepInfraChat"
+        },
+        "sonar-reasoning-pro": {
+            "display_name": "Sonar Reasoning Pro",
+            "provider": "PerplexityLabs"
+        }
+    },
+    "image": {
+        "sdxl-1.0": {
+            "display_name": "SDXL 1.0",
+            "provider": "HuggingSpace"
+        },
+        "midjourney": {
+            "display_name": "Midjourney",
+            "provider": "PollinationsAI"
+        },
+        "dall-e-3": {
+            "display_name": "DALL-E 3",
+            "provider": "PollinationsAI"
+        },
+        "flux-pro": {
+            "display_name": "Flux Pro",
+            "provider": "PollinationsAI"
+        },
+        "gpt-image": {
+            "display_name": "GPT-4o Image",
+            "provider": "PollinationsAI"
+        }
+    }
+}
