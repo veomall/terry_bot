@@ -18,7 +18,9 @@ from bot_handlers import (
     handle_photo,
     handle_message,
     setup_commands,
-    translate
+    translate,
+    language,
+    handle_language_selection
 )
 
 def main() -> None:
@@ -32,10 +34,12 @@ def main() -> None:
     application.add_handler(CommandHandler("newchat", new_chat))
     application.add_handler(CommandHandler("image", image_mode))
     application.add_handler(CommandHandler("translate", translate))
+    application.add_handler(CommandHandler("language", language))
     
     # Add callback query handlers
     application.add_handler(CallbackQueryHandler(handle_model_selection, pattern="^model:"))
     application.add_handler(CallbackQueryHandler(handle_system_prompt_choice, pattern="^systemprompt:"))
+    application.add_handler(CallbackQueryHandler(handle_language_selection, pattern="^lang:"))
     
     # Add message handler for photos
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))

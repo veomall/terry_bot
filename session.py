@@ -15,6 +15,7 @@ class UserSession:
         self.system_prompt = None
         self.is_image_mode = False
         self.last_image = None
+        self.interface_language = "ru"  # По умолчанию русский язык интерфейса
     
     def add_message(self, role, content):
         self.history.append({"role": role, "content": content})
@@ -52,6 +53,19 @@ class UserSession:
         if self.current_model and not self.is_image_mode:
             return MODELS_CONFIG["text"][self.current_model].get("vision", False)
         return False
+    
+    def set_interface_language(self, language_code):
+        """Устанавливает язык интерфейса для пользователя."""
+        if language_code in ["ru", "en", "de", "fr", "es", "it"]:
+            self.interface_language = language_code
+            logger.info(f"Interface language set to {language_code}")
+            return True
+        logger.warning(f"Attempted to set unknown language: {language_code}")
+        return False
+    
+    def get_interface_language(self):
+        """Возвращает текущий язык интерфейса пользователя."""
+        return self.interface_language
 
 
 def save_user_session(user_id):
@@ -78,6 +92,7 @@ def save_user_session(user_id):
             "system_prompt": session.system_prompt,
             "is_image_mode": session.is_image_mode,
             "last_interaction": datetime.datetime.now().isoformat(),
+            "interface_language": session.interface_language,
         }
         
         with open(chat_file, "wb") as f:
@@ -112,6 +127,10 @@ def load_user_session(user_id):
         session.provider = session_data["provider"]
         session.system_prompt = session_data["system_prompt"]
         session.is_image_mode = session_data["is_image_mode"]
+        
+        # Load interface language if available
+        if "interface_language" in session_data:
+            session.interface_language = session_data["interface_language"]
         
         logger.debug(f"User {user_id} last interaction: {session_data.get('last_interaction', 'unknown')}")
         return session

@@ -6,6 +6,7 @@ from logger_setup import logger
 from config import MODELS_CONFIG
 from session import user_sessions, save_user_session, get_or_create_session, UserSession
 from ai_client import get_ai_response, generate_image
+from translations import get_text, TRANSLATIONS
 
 async def setup_commands(application):
     """Настраивает меню команд в Telegram боте."""
@@ -13,6 +14,7 @@ async def setup_commands(application):
         BotCommand("newchat", "Начать новый текстовый разговор"),
         BotCommand("image", "Генерация изображений"),
         BotCommand("translate", "Перевод текста"),
+        BotCommand("language", "Изменить язык интерфейса"),
         BotCommand("help", "Показать справку"),
     ]
     await application.bot.set_my_commands(commands)
@@ -26,15 +28,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     # Initialize user session
     session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
     
-    await update.message.reply_text(
-        "Привет! Я Terry - сборник моделей AI. Используй /newchat для начала нового разговора с текстовыми моделями или /image для генерации изображений."
-    )
+    await update.message.reply_text(get_text("welcome", lang))
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a more informative help message when the command /help is issued."""
     user_id = update.effective_user.id
     logger.info(f"User {user_id} requested help")
+    
+    # Get user session for language
+    session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
     
     # Get current model info if available
     current_model_info = ""
@@ -43,23 +48,17 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         model_type = "image" if session.is_image_mode else "text"
         if model_type in MODELS_CONFIG and session.current_model in MODELS_CONFIG[model_type]:
             display_name = MODELS_CONFIG[model_type][session.current_model].get("display_name", session.current_model)
-            current_model_info = f"\n\n🤖 *Текущая модель*: {display_name}"
+            current_model_info = get_text("current_model", lang, display_name)
             
             # Add vision capability info
             if not session.is_image_mode and session.supports_vision():
-                current_model_info += "\n✅ Эта модель поддерживает анализ изображений. Отправьте фото с вопросом."
+                current_model_info += get_text("current_model_vision", lang)
     
     help_text = (
-        "*🤖 Terry*\n\n"
-        "• Общение с различными AI моделями\n"
-        "• Генерация изображений\n"
-        "• Анализ изображений (для поддерживаемых моделей)\n"
-        
-        "1️⃣ Выберите модель через /newchat (для текста) или /image (для картинок)\n"
-        "2️⃣ При выборе текстовой модели вы можете задать системный промпт или продолжить без него\n"
-        "3️⃣ Отправляйте сообщения для общения с выбранной моделью\n"
-        "4️⃣ Для моделей с поддержкой vision 👁 можно отправлять изображения с вопросами\n\n"
-        f"{current_model_info}"
+        get_text("help_title", lang) +
+        get_text("help_features", lang) +
+        get_text("help_instructions", lang) +
+        current_model_info
     )
     
     await update.message.reply_text(help_text, parse_mode="Markdown")
@@ -72,6 +71,7 @@ async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     # Initialize user session
     session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
     
     # Create buttons for text models
     keyboard = []
@@ -80,7 +80,7 @@ async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         keyboard.append([InlineKeyboardButton(display_name, callback_data=f"model:text:{model_id}")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Выберите текстовую модель для разговора:", reply_markup=reply_markup)
+    await update.message.reply_text(get_text("select_text_model", lang), reply_markup=reply_markup)
     logger.debug(f"Sent model selection menu to user {user_id}")
 
 async def image_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -90,6 +90,7 @@ async def image_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     
     # Initialize user session
     session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
     
     # Create buttons for image models
     keyboard = []
@@ -98,8 +99,58 @@ async def image_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         keyboard.append([InlineKeyboardButton(display_name, callback_data=f"model:image:{model_id}")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Выберите модель для генерации изображений:", reply_markup=reply_markup)
+    await update.message.reply_text(get_text("select_image_model", lang), reply_markup=reply_markup)
     logger.debug(f"Sent image model selection menu to user {user_id}")
+
+async def language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle language change command."""
+    user_id = update.effective_user.id
+    logger.info(f"User {user_id} requested language change")
+    
+    # Initialize user session
+    session = get_or_create_session(user_id)
+    current_lang = session.get_interface_language()
+    
+    # Create buttons for language selection
+    keyboard = []
+    for lang_code in ["ru", "en", "be"]:
+        # Get language name in user's current language
+        lang_name_key = f"language_name_{lang_code}"
+        lang_name = get_text(lang_name_key, current_lang)
+        
+        # Add visual indicator for currently selected language
+        button_text = f"✓ {lang_name}" if lang_code == current_lang else lang_name
+        
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"lang:{lang_code}")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(get_text("language_selection", current_lang), reply_markup=reply_markup)
+    logger.debug(f"Sent language selection menu to user {user_id}")
+
+async def handle_language_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle interface language selection."""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    callback_data = query.data
+    logger.info(f"User {user_id} selected language from callback: {callback_data}")
+    
+    # Extract language code from callback data
+    _, lang_code = callback_data.split(":", 1)
+    
+    # Get user session and set language
+    session = get_or_create_session(user_id)
+    session.set_interface_language(lang_code)
+    save_user_session(user_id)
+    
+    # Get language name for the selected language
+    lang_name_key = f"language_name_{lang_code}"
+    lang_name = get_text(lang_name_key, lang_code)
+    
+    # Confirm language change in the new selected language
+    await query.edit_message_text(get_text("language_set", lang_code, lang_name))
+    logger.debug(f"User {user_id} changed interface language to {lang_code}")
 
 async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle model selection from inline keyboard."""
@@ -109,6 +160,10 @@ async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_T
     user_id = update.effective_user.id
     callback_data = query.data
     logger.info(f"User {user_id} selected model from callback: {callback_data}")
+    
+    # Get user session for language
+    session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
     
     # Extract model type and name from callback data
     _, model_type, model_name = callback_data.split(":", 2)
@@ -121,8 +176,8 @@ async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_T
         provider = MODELS_CONFIG['image'][model_name]['provider']
         display_name = MODELS_CONFIG['image'][model_name].get('display_name', model_name)
         await query.edit_message_text(
-            f"Выбрана модель: {display_name}\n\n"
-            f"Отправьте текстовый запрос для генерации изображения."
+            f"{get_text('model_selected', lang, display_name)}\n\n"
+            f"{get_text('send_image_prompt', lang)}"
         )
         logger.debug(f"User {user_id} selected image model {model_name}")
         save_user_session(user_id)
@@ -130,19 +185,19 @@ async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_T
     
     # For text models, ask about system prompt
     keyboard = [
-        [InlineKeyboardButton("Задать системный промпт", callback_data="systemprompt:custom")],
-        [InlineKeyboardButton("Без системного промпта", callback_data="systemprompt:none")]
+        [InlineKeyboardButton(get_text("set_system_prompt", lang), callback_data="systemprompt:custom")],
+        [InlineKeyboardButton(get_text("no_system_prompt", lang), callback_data="systemprompt:none")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     vision_info = ""
     if MODELS_CONFIG["text"][model_name].get("vision", False):
-        vision_info = "\n\nЭта модель поддерживает анализ изображений. Вы можете отправлять фото вместе с вопросами."
+        vision_info = get_text("vision_capability", lang)
     
     display_name = MODELS_CONFIG["text"][model_name].get("display_name", model_name)
     await query.edit_message_text(
-        f"Выбрана модель: {display_name}\n\n"
-        f"Хотите задать системный промпт?{vision_info}",
+        f"{get_text('model_selected', lang, display_name)}\n\n"
+        f"{get_text('system_prompt_question', lang, vision_info)}",
         reply_markup=reply_markup
     )
     logger.debug(f"User {user_id} selected text model {model_name} and was shown prompt selection")
@@ -157,13 +212,15 @@ async def handle_system_prompt_choice(update: Update, context: ContextTypes.DEFA
     callback_data = query.data
     logger.info(f"User {user_id} selected prompt type: {callback_data}")
     
+    # Get user session for language
+    session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
+    
     _, choice = callback_data.split(":", 1)
     
     if choice == "custom":
         # User wants to set a custom system prompt
-        await query.edit_message_text(
-            "Пожалуйста, отправьте свой системный промпт в следующем сообщении."
-        )
+        await query.edit_message_text(get_text("send_system_prompt", lang))
         context.user_data["awaiting_system_prompt"] = True
         logger.debug(f"User {user_id} is setting a custom prompt")
     
@@ -172,10 +229,7 @@ async def handle_system_prompt_choice(update: Update, context: ContextTypes.DEFA
         user_sessions[user_id].system_prompt = None
         user_sessions[user_id].clear_history()
         display_name = MODELS_CONFIG["text"][user_sessions[user_id].current_model].get("display_name", user_sessions[user_id].current_model)
-        await query.edit_message_text(
-            f"Новый чат создан с моделью {display_name}.\n"
-            f"Системный промпт не установлен. Отправьте сообщение, чтобы начать разговор."
-        )
+        await query.edit_message_text(get_text("chat_created_no_prompt", lang, display_name))
         logger.debug(f"User {user_id} chose not to set a system prompt")
     
     save_user_session(user_id)
@@ -188,12 +242,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     
     # Check if user has an active session
     session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
     
     # Check if model supports vision
     if not session.supports_vision():
-        await update.message.reply_text(
-            "Текущая модель не поддерживает анализ изображений. Выберите другую модель с поддержкой vision."
-        )
+        await update.message.reply_text(get_text("no_vision_support", lang))
         logger.warning(f"User {user_id} tried to use vision with non-supporting model: {session.current_model}")
         return
     
@@ -213,9 +266,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.info(f"User {user_id} sent image with caption: {caption}")
         await handle_image_question(update, context, caption, photo_bytes)
     else:
-        await update.message.reply_text(
-            "Изображение получено. Теперь задайте вопрос или опишите, что вы хотите узнать об этом изображении."
-        )
+        await update.message.reply_text(get_text("image_received", lang))
         context.user_data["awaiting_image_question"] = True
         logger.debug(f"User {user_id} uploaded image without caption, awaiting question")
     
@@ -226,6 +277,10 @@ async def handle_image_question(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = update.effective_user.id
     message = update.message
     
+    # Get user session for language
+    session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
+    
     # If question is not provided, use the message text
     if question is None:
         question = message.text
@@ -235,7 +290,7 @@ async def handle_image_question(update: Update, context: ContextTypes.DEFAULT_TY
         image_bytes = user_sessions[user_id].last_image
         
         if image_bytes is None:
-            await message.reply_text("Не найдено изображение для анализа. Пожалуйста, отправьте изображение вместе с вопросом.")
+            await message.reply_text(get_text("no_image_found", lang))
             logger.warning(f"User {user_id} tried to ask about an image, but no image was found")
             return
     
@@ -269,8 +324,8 @@ async def handle_image_question(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         logger.error(f"Error analyzing image for user {user_id}: {str(e)}")
         logger.debug(traceback.format_exc())
-        await message.reply_text(f"Произошла ошибка при анализе изображения: {str(e)}")
-    
+        await message.reply_text(get_text("image_error", lang, str(e)))
+
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start translation mode."""
     user_id = update.effective_user.id
@@ -278,20 +333,22 @@ async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     # Initialize user session
     session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
     
     # Set translation mode
     context.user_data["awaiting_target_language"] = True
     
-    await update.message.reply_text(
-        "🌐 Режим перевода активирован.\n\n"
-        "Пожалуйста, укажите язык, на который нужно перевести текст (например, 'английский', 'немецкий', 'французский' и т.д.)."
-    )
+    await update.message.reply_text(get_text("translation_mode_activated", lang))
     logger.debug(f"User {user_id} was asked to specify target language")
 
 async def handle_target_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle target language selection for translation."""
     user_id = update.effective_user.id
     target_language = update.message.text
+    
+    # Get user session for language
+    session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
     
     logger.info(f"User {user_id} selected translation target language: {target_language}")
     
@@ -300,10 +357,7 @@ async def handle_target_language(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data["awaiting_target_language"] = False
     context.user_data["awaiting_translation_text"] = True
     
-    await update.message.reply_text(
-        f"Язык перевода: {target_language}.\n\n"
-        f"Теперь отправьте текст, который нужно перевести."
-    )
+    await update.message.reply_text(get_text("translation_language_selected", lang, target_language))
     logger.debug(f"User {user_id} was asked to provide text for translation")
 
 async def handle_translation_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -311,6 +365,10 @@ async def handle_translation_text(update: Update, context: ContextTypes.DEFAULT_
     user_id = update.effective_user.id
     text_to_translate = update.message.text
     target_language = context.user_data.get("translation_target_language")
+    
+    # Get user session for language
+    session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
     
     logger.info(f"User {user_id} sent text for translation to {target_language}: '{text_to_translate[:50]}...'")
     
@@ -334,15 +392,13 @@ async def handle_translation_text(update: Update, context: ContextTypes.DEFAULT_
         response = await get_ai_response(temp_session.provider, temp_session.current_model, temp_session.history)
         
         # Send the translation
-        await update.message.reply_text(
-            f"Перевод на {target_language}:\n\n{response}"
-        )
+        await update.message.reply_text(get_text("translation_result", lang, target_language, response))
         logger.info(f"Translation sent to user {user_id}, response length: {len(response)}")
         
     except Exception as e:
         logger.error(f"Error during translation for user {user_id}: {str(e)}")
         logger.debug(traceback.format_exc())
-        await update.message.reply_text(f"Произошла ошибка при переводе: {str(e)}")
+        await update.message.reply_text(get_text("translation_error", lang, str(e)))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle user messages."""
@@ -353,6 +409,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # Initialize user session
     session = get_or_create_session(user_id)
+    lang = session.get_interface_language()
     
     # If we're waiting for a system prompt
     if context.user_data.get("awaiting_system_prompt", False):
@@ -360,10 +417,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session.set_system_prompt(message_text)
         context.user_data["awaiting_system_prompt"] = False
         display_name = MODELS_CONFIG["text"][session.current_model].get("display_name", session.current_model)
-        await update.message.reply_text(
-            f"Системный промпт установлен. Новый чат создан с моделью {display_name}.\n"
-            f"Отправьте сообщение, чтобы начать разговор."
-        )
+        await update.message.reply_text(get_text("system_prompt_set", lang, display_name))
         logger.debug(f"User {user_id} set custom system prompt: '{message_text[:50]}...'")
         save_user_session(user_id)
         return
@@ -387,9 +441,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # Check if model is selected
     if not session.current_model:
-        await update.message.reply_text(
-            "Пожалуйста, выберите модель с помощью команды /newchat перед началом разговора."
-        )
+        await update.message.reply_text(get_text("select_model_first", lang))
         logger.warning(f"User {user_id} tried to chat without selecting a model first")
         return
     
@@ -409,7 +461,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             image_url = await generate_image(provider_name, model, message_text)
             
             # Send the image
-            await update.message.reply_photo(photo=image_url, caption=f"Сгенерировано с помощью {model}")
+            await update.message.reply_photo(
+                photo=image_url, 
+                caption=get_text("generated_with", lang, model)
+            )
             logger.info(f"Generated and sent image to user {user_id}")
             
         else:
@@ -440,4 +495,4 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         logger.error(f"Error in handle_message for user {user_id}: {str(e)}")
         logger.debug(traceback.format_exc())
-        await update.message.reply_text(f"Произошла ошибка: {str(e)}") 
+        await update.message.reply_text(get_text("error_occurred", lang, str(e))) 
