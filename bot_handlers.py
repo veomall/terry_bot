@@ -41,24 +41,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     session = get_or_create_session(user_id)
     lang = session.get_interface_language()
     
-    # Get current model info if available
-    current_model_info = ""
-    if user_id in user_sessions and user_sessions[user_id].current_model:
-        session = user_sessions[user_id]
-        model_type = "image" if session.is_image_mode else "text"
-        if model_type in MODELS_CONFIG and session.current_model in MODELS_CONFIG[model_type]:
-            display_name = MODELS_CONFIG[model_type][session.current_model].get("display_name", session.current_model)
-            current_model_info = get_text("current_model", lang, display_name)
-            
-            # Add vision capability info
-            if not session.is_image_mode and session.supports_vision():
-                current_model_info += get_text("current_model_vision", lang)
-    
     help_text = (
         get_text("help_title", lang) +
         get_text("help_features", lang) +
-        get_text("help_instructions", lang) +
-        current_model_info
+        get_text("help_instructions", lang)
     )
     
     await update.message.reply_text(help_text, parse_mode="Markdown")
@@ -400,6 +386,30 @@ async def handle_translation_text(update: Update, context: ContextTypes.DEFAULT_
         logger.debug(traceback.format_exc())
         await update.message.reply_text(get_text("translation_error", lang, str(e)))
 
+async def translate_text_to_english(text):
+    """Переводит текст на английский язык, используя GPT-4o."""
+    try:
+        logger.info(f"Translating text to English: '{text[:50]}...'")
+        
+        # Создаем временную сессию для перевода
+        temp_session = UserSession()
+        temp_session.set_model("gpt-4o", "text")
+        
+        # Формируем запрос на перевод
+        translate_prompt = f"Translate the following text to English. Return only the translated text without explanations or comments:\n\n{text}"
+        temp_session.add_message("user", translate_prompt)
+        
+        # Получаем перевод от модели
+        response = await get_ai_response(temp_session.provider, temp_session.current_model, temp_session.history)
+        
+        logger.info(f"Translation to English completed, length: {len(response)}")
+        return response
+    except Exception as e:
+        logger.error(f"Error translating text to English: {str(e)}")
+        logger.debug(traceback.format_exc())
+        # Если произошла ошибка, возвращаем оригинальный текст
+        return text
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle user messages."""
     user_id = update.effective_user.id
@@ -457,8 +467,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
             logger.info(f"User {user_id} requested image generation with prompt: '{message_text[:50]}...'")
             
-            # Generate image
-            image_url = await generate_image(provider_name, model, message_text)
+            # Переводим запрос на английский
+            english_prompt = await translate_text_to_english(message_text)
+            
+            # Генерируем изображение с переведенным запросом
+            image_url = await generate_image(provider_name, model, english_prompt)
             
             # Send the image
             await update.message.reply_photo(
