@@ -1,5 +1,5 @@
 import traceback
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats
 from telegram.ext import ContextTypes
 
 from logger_setup import logger
@@ -17,8 +17,19 @@ async def setup_commands(application):
         BotCommand("language", "Изменить язык интерфейса"),
         BotCommand("help", "Показать справку"),
     ]
-    await application.bot.set_my_commands(commands)
-    logger.info("Bot commands menu has been set up")
+    
+    # Устанавливаем команды для приватных чатов
+    await application.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+    
+    # Устанавливаем команды для групповых чатов
+    group_commands = [
+        BotCommand("image", "Генерация изображений"),
+        BotCommand("newchat", "Начать новый текстовый разговор"),
+        BotCommand("help", "Показать справку"),
+    ]
+    await application.bot.set_my_commands(group_commands, scope=BotCommandScopeAllGroupChats())
+    
+    logger.info("Bot commands menu has been set up for private and group chats")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
@@ -74,9 +85,17 @@ async def image_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     user_id = update.effective_user.id
     logger.info(f"User {user_id} switched to image mode")
     
+    # Определяем тип чата
+    is_group_chat = update.effective_chat.type in ["group", "supergroup"]
+    
     # Initialize user session
     session = get_or_create_session(user_id)
     lang = session.get_interface_language()
+    
+    # В групповом чате сбрасываем флаг генерации изображения при каждом вызове команды /image
+    if is_group_chat:
+        session.group_image_generated = False
+        logger.debug(f"Reset group_image_generated flag for user {user_id} in group chat")
     
     # Create buttons for image models
     keyboard = []
@@ -87,6 +106,8 @@ async def image_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(get_text("select_image_model", lang), reply_markup=reply_markup)
     logger.debug(f"Sent image model selection menu to user {user_id}")
+    
+    save_user_session(user_id)
 
 async def language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle language change command."""
@@ -147,6 +168,9 @@ async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_T
     callback_data = query.data
     logger.info(f"User {user_id} selected model from callback: {callback_data}")
     
+    # Определяем тип чата
+    is_group_chat = update.effective_chat.type in ["group", "supergroup"]
+    
     # Get user session for language
     session = get_or_create_session(user_id)
     lang = session.get_interface_language()
@@ -161,6 +185,12 @@ async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_T
         user_sessions[user_id].clear_history()
         provider = MODELS_CONFIG['image'][model_name]['provider']
         display_name = MODELS_CONFIG['image'][model_name].get('display_name', model_name)
+        
+        # В групповых чатах сбрасываем флаг генерации изображения при выборе модели
+        if is_group_chat:
+            user_sessions[user_id].group_image_generated = False
+            logger.debug(f"Reset group_image_generated flag for user {user_id} in group chat during model selection")
+        
         await query.edit_message_text(
             f"{get_text('model_selected', lang, display_name)}\n\n"
             f"{get_text('send_image_prompt', lang)}"
@@ -224,6 +254,30 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Handle photos sent by users."""
     user_id = update.effective_user.id
     photo_id = update.message.photo[-1].file_id
+    
+    # Определяем тип чата: личный или групповой
+    is_group_chat = update.effective_chat.type in ["group", "supergroup"]
+    
+    # В групповом чате проверяем, адресовано ли сообщение боту
+    if is_group_chat:
+        # Получаем информацию о боте
+        bot = context.bot
+        
+        # Проверяем, является ли сообщение ответом на сообщение бота
+        is_reply_to_bot = update.message.reply_to_message and update.message.reply_to_message.from_user.id == bot.id
+        contains_mention = update.message.caption and f"@{bot.username}" in update.message.caption
+        
+        # Если сообщение не адресовано боту, игнорируем его
+        if not (is_reply_to_bot or contains_mention):
+            logger.debug(f"Ignoring photo in group chat from user {user_id} as it's not addressed to bot")
+            return
+        
+        # Если это упоминание в подписи, удаляем @username из текста
+        caption = update.message.caption
+        if contains_mention and caption:
+            caption = caption.replace(f"@{bot.username}", "").strip()
+            logger.debug(f"Removed bot mention from caption: '{caption}'")
+    
     logger.info(f"User {user_id} sent a photo: {photo_id}")
     
     # Check if user has an active session
@@ -263,6 +317,9 @@ async def handle_image_question(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = update.effective_user.id
     message = update.message
     
+    # Определяем тип чата: личный или групповой
+    is_group_chat = update.effective_chat.type in ["group", "supergroup"]
+    
     # Get user session for language
     session = get_or_create_session(user_id)
     lang = session.get_interface_language()
@@ -270,6 +327,13 @@ async def handle_image_question(update: Update, context: ContextTypes.DEFAULT_TY
     # If question is not provided, use the message text
     if question is None:
         question = message.text
+        
+        # В групповом чате удаляем упоминание бота из вопроса, если оно есть
+        if is_group_chat:
+            bot = context.bot
+            if f"@{bot.username}" in question:
+                question = question.replace(f"@{bot.username}", "").strip()
+                logger.debug(f"Removed bot mention from image question: '{question}'")
     
     # If image is not provided, use the last image
     if image_bytes is None:
@@ -281,7 +345,7 @@ async def handle_image_question(update: Update, context: ContextTypes.DEFAULT_TY
             return
     
     # Show typing indicator
-    await context.bot.send_chat_action(chat_id=user_id, action="typing")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     
     try:
         # Add user message to history
@@ -330,7 +394,19 @@ async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def handle_target_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle target language selection for translation."""
     user_id = update.effective_user.id
-    target_language = update.message.text
+    message_text = update.message.text
+    
+    # Определяем тип чата: личный или групповой
+    is_group_chat = update.effective_chat.type in ["group", "supergroup"]
+    
+    # В групповом чате удаляем упоминание бота из сообщения, если оно есть
+    if is_group_chat:
+        bot = context.bot
+        if f"@{bot.username}" in message_text:
+            message_text = message_text.replace(f"@{bot.username}", "").strip()
+            logger.debug(f"Removed bot mention from target language: '{message_text}'")
+    
+    target_language = message_text
     
     # Get user session for language
     session = get_or_create_session(user_id)
@@ -362,7 +438,7 @@ async def handle_translation_text(update: Update, context: ContextTypes.DEFAULT_
     context.user_data["awaiting_translation_text"] = False
     
     # Show typing indicator
-    await context.bot.send_chat_action(chat_id=user_id, action="typing")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     
     try:
         # Create a prompt for translation
@@ -415,7 +491,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     message_text = update.message.text
     
-    logger.info(f"User {user_id} sent message: '{message_text[:30]}...' ({len(message_text)} chars)")
+    # Определяем тип чата: личный или групповой
+    is_group_chat = update.effective_chat.type in ["group", "supergroup"]
+    
+    # В групповом чате проверяем, адресовано ли сообщение боту
+    if is_group_chat:
+        # Получаем информацию о боте
+        bot = context.bot
+        bot_username = bot.username
+        
+        # Проверяем, является ли сообщение ответом на сообщение бота или содержит упоминание бота
+        is_reply_to_bot = update.message.reply_to_message and update.message.reply_to_message.from_user.id == bot.id
+        contains_mention = f"@{bot_username}" in message_text
+        
+        # Если сообщение не адресовано боту, игнорируем его
+        if not (is_reply_to_bot or contains_mention):
+            logger.debug(f"Ignoring message in group chat from user {user_id} as it's not addressed to bot")
+            return
+        
+        # Если это упоминание, удаляем @username из текста сообщения
+        if contains_mention:
+            message_text = message_text.replace(f"@{bot_username}", "").strip()
+            logger.debug(f"Removed bot mention from message: '{message_text}'")
+    
+    logger.info(f"User {user_id} sent message in {'group' if is_group_chat else 'private'} chat: '{message_text[:30]}...' ({len(message_text)} chars)")
     
     # Initialize user session
     session = get_or_create_session(user_id)
@@ -457,10 +556,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # Show typing indicator or upload photo indicator
     action = "upload_photo" if session.is_image_mode else "typing"
-    await context.bot.send_chat_action(chat_id=user_id, action=action)
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=action)
     
     try:
         if session.is_image_mode:
+            # Проверка режима: в групповых чатах требуется повторный выбор модели для каждой генерации
+            if is_group_chat and session.group_image_generated:
+                # В групповом чате после генерации первого изображения сбрасываем модель
+                session.reset_image_model_in_group()
+                save_user_session(user_id)
+                return
+            
             # Handle image generation
             provider_name = session.provider
             model = session.current_model
@@ -479,6 +585,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 caption=get_text("generated_with", lang, model)
             )
             logger.info(f"Generated and sent image to user {user_id}")
+            
+            # Если это групповой чат, помечаем что изображение было сгенерировано
+            if is_group_chat:
+                session.group_image_generated = True
+                logger.debug(f"Marked group image as generated for user {user_id}")
             
         else:
             # Handle text conversation

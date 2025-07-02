@@ -28,7 +28,7 @@ def main() -> None:
     # Create the Application and pass it your bot's token.
     application = Application.builder().token(TOKEN).build()
 
-    # Add command handlers
+    # Add command handlers for all chat types
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("newchat", new_chat))
@@ -44,8 +44,18 @@ def main() -> None:
     # Add message handler for photos
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
-    # Add message handler for text
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Add message handler for text in private chats
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, 
+        handle_message
+    ))
+    
+    # Add message handler for text in group chats
+    # Будет обрабатываться в handle_message через проверку упоминания или ответа
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, 
+        handle_message
+    ))
 
     # Setup menu commands when bot starts
     application.post_init = setup_commands

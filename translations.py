@@ -22,6 +22,9 @@ TRANSLATIONS = {
         "model_selected": "Выбрана модель: {}",
         "send_image_prompt": "Отправьте текстовый запрос для генерации изображения.",
         
+        # Групповой чат
+        "select_model_for_next_image": "Для создания ещё одного изображения в групповом чате, пожалуйста, снова выберите модель используя команду /image",
+        
         # Системный промпт
         "system_prompt_question": "Хотите задать системный промпт?{}",
         "set_system_prompt": "Задать системный промпт",
@@ -82,6 +85,9 @@ TRANSLATIONS = {
         "model_selected": "Selected model: {}",
         "send_image_prompt": "Send a text prompt for image generation.",
         
+        # Group chat
+        "select_model_for_next_image": "To create another image in a group chat, please select a model again using the /image command",
+        
         # System prompt
         "system_prompt_question": "Do you want to set a system prompt?{}",
         "set_system_prompt": "Set system prompt",
@@ -141,6 +147,9 @@ TRANSLATIONS = {
         "select_image_model": "Выберыце мадэль для стварэньня выявы:",
         "model_selected": "Выбраная мадэль: {}",
         "send_image_prompt": "Адпраўце тэкставы запыт для стварэньня выявы.",
+        
+        # Group chat
+        "select_model_for_next_image": "Для стварэньня яшчэ аднаго выявы ў групавым чаце, калі ласка, зноў выберыце мадэль выкарыстоўваючы каманду /image",
         
         # System prompt
         "system_prompt_question": "Хочаце задаць сыстэмны прампт?{}",

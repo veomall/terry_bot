@@ -16,6 +16,8 @@ class UserSession:
         self.is_image_mode = False
         self.last_image = None
         self.interface_language = "ru"  # По умолчанию русский язык интерфейса
+        # Добавляем переменную для отслеживания генерации изображений в групповом чате
+        self.group_image_generated = False
     
     def add_message(self, role, content):
         self.history.append({"role": role, "content": content})
@@ -37,10 +39,22 @@ class UserSession:
             else:
                 self.provider = config[model_name]["provider"]
             self.is_image_mode = (model_type == "image")
+            # Сбрасываем флаг генерации изображения в групповом чате при выборе модели
+            self.group_image_generated = False
             logger.info(f"Model set to {model_name} ({self.provider}), image mode: {self.is_image_mode}")
             return True
         
         logger.warning(f"Attempted to set unknown model: {model_name} of type {model_type}")
+        return False
+    
+    def reset_image_model_in_group(self):
+        """Сбрасывает модель генерации изображений в групповом чате."""
+        if self.is_image_mode:
+            self.current_model = None
+            self.provider = None
+            self.group_image_generated = False
+            logger.info("Reset image model in group chat")
+            return True
         return False
     
     def set_system_prompt(self, prompt):
@@ -93,6 +107,7 @@ def save_user_session(user_id):
             "is_image_mode": session.is_image_mode,
             "last_interaction": datetime.datetime.now().isoformat(),
             "interface_language": session.interface_language,
+            "group_image_generated": session.group_image_generated,
         }
         
         with open(chat_file, "wb") as f:
@@ -131,6 +146,10 @@ def load_user_session(user_id):
         # Load interface language if available
         if "interface_language" in session_data:
             session.interface_language = session_data["interface_language"]
+            
+        # Load group_image_generated flag if available
+        if "group_image_generated" in session_data:
+            session.group_image_generated = session_data["group_image_generated"]
         
         logger.debug(f"User {user_id} last interaction: {session_data.get('last_interaction', 'unknown')}")
         return session
